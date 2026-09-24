@@ -82,8 +82,13 @@ An hourly `sync` adds the include to domains created after the install.
 |---|---|---|
 | Ubuntu 24.04 | HestiaCP 1.9 | Field-tested |
 | Ubuntu 22.04 | Plesk Obsidian 18.0 | Field-tested |
-| Ubuntu 22.04 / 24.04 / 26.04 | plain nginx (`--panel none`, `--auto-inject`) | Supported, not yet field-tested |
-| Rocky Linux 8, 9, 10 | Plesk or plain nginx | Supported, not yet field-tested (SELinux labels are handled with `restorecon`) |
+| Rocky Linux 10 | plain nginx (distro package, `--auto-inject`, SELinux enforcing) | Field-tested |
+| Rocky Linux 8, 9 | Plesk or plain nginx | Supported, not yet field-tested |
+| Rocky Linux 10 | Plesk | Supported, not yet field-tested |
+| Ubuntu 22.04 / 24.04 / 26.04 | plain nginx | Supported, not yet field-tested |
+| Ubuntu 26.04 | HestiaCP or Plesk | Supported, not yet field-tested |
+
+On Rocky Linux, SELinux labels of the generated files are restored with `restorecon`.
 
 Panel support also depends on the panel vendor supporting that OS (for example, HestiaCP runs
 on Debian/Ubuntu only).
