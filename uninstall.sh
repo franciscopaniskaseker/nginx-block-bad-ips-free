@@ -75,6 +75,12 @@ fi
 
 nbbi_lock
 
+# Real IP restoration written by this tool disappears with it.
+REALIP_WARNING=""
+if [ "$(cat "$NBBI_STATE/realip.effective" 2>/dev/null)" = managed ] && [ "${CFG[REALIP_MODE]}" != off ]; then
+    REALIP_WARNING=1
+fi
+
 # 1. Back up what the user wrote, before touching anything.
 BACKUP="/root/nginx-block-bad-ips-backup-$(date +%Y%m%d-%H%M%S)"
 mkdir -p "$BACKUP" || die "cannot create $BACKUP"
@@ -136,3 +142,13 @@ nginx-block-bad-ips was removed. Cron job, scripts, cache and nginx files are go
      cp $BACKUP/whitelist.txt $NBBI_WHITELIST && nginx-block-bad-ips apply
 ================================================================================
 EOF
+if [ -n "$REALIP_WARNING" ]; then
+    cat <<EOF
+
+ WARNING: nginx-block-bad-ips was also restoring the real client IP behind
+ Cloudflare/proxies (set_real_ip_from + real_ip_header). That configuration was
+ removed too: nginx now sees the proxy address as the client, which affects
+ access logs, rate limits and any IP-based rule. If your sites are behind a
+ proxy, add your own real IP configuration and reload nginx.
+EOF
+fi

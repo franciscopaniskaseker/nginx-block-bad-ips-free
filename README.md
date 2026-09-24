@@ -78,12 +78,15 @@ An hourly `sync` adds the include to domains created after the install.
 
 ## Supported systems
 
-| OS | Panels | Status |
+| OS | Mode | Status |
 |---|---|---|
 | Ubuntu 24.04 | HestiaCP 1.9 | Field-tested |
 | Ubuntu 22.04 | Plesk Obsidian 18.0 | Field-tested |
-| Ubuntu 26.04 | HestiaCP, Plesk, plain nginx | Supported, not yet field-tested |
-| Rocky Linux 8, 9, 10 | Plesk, plain nginx | Supported, not yet field-tested (SELinux labels are handled with `restorecon`) |
+| Ubuntu 22.04 / 24.04 / 26.04 | plain nginx (`--panel none`, `--auto-inject`) | Supported, not yet field-tested |
+| Rocky Linux 8, 9, 10 | Plesk or plain nginx | Supported, not yet field-tested (SELinux labels are handled with `restorecon`) |
+
+Panel support also depends on the panel vendor supporting that OS (for example, HestiaCP runs
+on Debian/Ubuntu only).
 
 Requirements:
 - nginx with the realip module. It is included in the nginx builds of Ubuntu, Rocky Linux,
@@ -364,6 +367,10 @@ The uninstaller runs in this order:
 4. Removes the cron job, the CLI, the libraries, the cache and the state.
 
 Use `--yes` to skip the confirmation.
+
+If the tool was managing the real client IP (`--realip managed`, or `auto` on a server without its
+own configuration), that configuration is removed too, and the uninstaller warns you. Add your own
+`set_real_ip_from` / `real_ip_header` configuration if your sites are behind a proxy.
 
 ## License
 

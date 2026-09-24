@@ -189,6 +189,13 @@ split_list() { printf '%s\n' "$1" | tr ',' '\n' | tr -d ' \t' | sed '/^$/d'; }
 
 # ---------------------------------------------------------------- helpers ---
 
+# Remembers the outcome of the last run for `status`: record_last_run OK|FAILED message
+record_last_run() {
+    [ "$NBBI_DRY_RUN" = 1 ] && return 0
+    mkdir -p "$NBBI_STATE" 2>/dev/null || return 0
+    printf '%s|%s|%s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$1" "$2" > "$NBBI_STATE/last-run"
+}
+
 # awk with ipaddr.awk loaded: nbbi_awk [-v VAR=value]... [file]...
 nbbi_awk() {
     local opts=()
@@ -293,6 +300,7 @@ txn_preflight() {
     fi
     TXN_PREFLIGHT=failed
     if [ "$TXN_PREFLIGHT_STRICT" = 1 ]; then
+        record_last_run FAILED "nginx -t already failing before any change; nothing modified"
         err "nginx -t already fails BEFORE any change; nothing was modified. nginx said:"
         printf '%s\n' "$NGINX_TEST_OUTPUT" | sed 's/^/    /' >&2
         txn_discard

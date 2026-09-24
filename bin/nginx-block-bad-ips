@@ -87,11 +87,7 @@ EOF
 
 # ------------------------------------------------------------------ apply ---
 
-last_run() {  # last_run OK|FAILED message
-    [ "$NBBI_DRY_RUN" = 1 ] && return 0
-    mkdir -p "$NBBI_STATE"
-    printf '%s|%s|%s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$1" "$2" > "$NBBI_STATE/last-run"
-}
+last_run() { record_last_run "$@"; }
 
 # do_apply yes|no  (yes = download first)
 do_apply() {

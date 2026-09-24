@@ -163,7 +163,7 @@ download_geoip() {
     # IPv4: every country, so that "other country" and "no country" differ.
     tgz=$(mktemp "$NBBI_CACHE/.geo.XXXXXX")
     tmpd=$(mktemp -d "$gdir/.v4.XXXXXX")
-    if fetch_raw "$NBBI_IPDENY_V4_ALL" "$tgz" && tar -xzf "$tgz" -C "$tmpd" 2>/dev/null \
+    if fetch_raw "$NBBI_IPDENY_V4_ALL" "$tgz" && tar --no-same-owner -xzf "$tgz" -C "$tmpd" 2>/dev/null \
         && [ "$(find "$tmpd" -name '*.zone' | wc -l)" -ge 100 ]; then
         find "$tmpd" -name '*.zone' -exec chmod 0644 {} +
         rm -rf -- "$gdir/v4.old"

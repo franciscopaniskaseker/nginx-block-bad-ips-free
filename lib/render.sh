@@ -142,11 +142,19 @@ render_geoip() {
     [ "${CFG[GEOIP_ENABLED]}" = yes ] || return 0
     sel=$(geoip_countries | paste -sd' ' -)
     if [ -d "$gdir/v4" ]; then
-        mapfile -t zones < <(find "$gdir/v4" -name '*.zone' | sort)
-        if [ "${#zones[@]}" -gt 0 ]; then
-            nbbi_awk -v MODE=zones4 -v SEL="$sel" "${zones[@]}" \
-                | sort -n -k1,1 -k2,2 | nbbi_awk -v MODE=merge4 >> "$out4"
+        # Merging ~260k zone lines costs seconds of CPU: reuse the last result
+        # while the zone data and the selected countries are unchanged.
+        local key merged="$gdir/v4-merged.geo"
+        key="$sel|$(stat -c '%i %Y' "$gdir/v4" 2>/dev/null)"
+        if [ ! -s "$merged" ] || [ "$(cat "$merged.key" 2>/dev/null)" != "$key" ]; then
+            mapfile -t zones < <(find "$gdir/v4" -name '*.zone' | sort)
+            if [ "${#zones[@]}" -gt 0 ]; then
+                nbbi_awk -v MODE=zones4 -v SEL="$sel" "${zones[@]}" \
+                    | sort -n -k1,1 -k2,2 | nbbi_awk -v MODE=merge4 > "$merged.tmp" \
+                    && mv -f "$merged.tmp" "$merged" && printf '%s\n' "$key" > "$merged.key"
+            fi
         fi
+        [ -s "$merged" ] && cat "$merged" >> "$out4"
     else
         warn "geoip: no IPv4 country data yet"
     fi
