@@ -76,7 +76,7 @@ hestia_remove() {
     list=$(mktemp "$NBBI_VAR/.rm.XXXXXX")
     {
         [ -f "$NBBI_STATE/hestia.files" ] && cat "$NBBI_STATE/hestia.files"
-        find /home -maxdepth 5 -path '*/conf/web/*' -name "nginx*.conf_$HESTIA_FILE" 2>/dev/null
+        find /home -maxdepth 6 -type f -name "nginx*.conf_$HESTIA_FILE" 2>/dev/null
     } | sort -u > "$list"
     while IFS= read -r f; do
         [ -f "$f" ] || continue

@@ -51,11 +51,28 @@ resolve_realip() {
             if [ -n "$files" ]; then
                 echo external > "$NBBI_STATE/realip.effective"
                 printf '%s\n' "$files" > "$NBBI_STATE/realip.external"
+                local missing
+                missing=$(realip_missing_cloudflare | paste -sd' ' -)
+                [ -n "$missing" ] && warn "the existing real IP config ($(paste -sd' ' "$NBBI_STATE/realip.external")) does not trust these Cloudflare ranges: $missing. Visitors behind them are not checked. Update that config or use REALIP_MODE=managed."
             else
                 echo managed > "$NBBI_STATE/realip.effective"
                 rm -f "$NBBI_STATE/realip.external"
             fi ;;
     esac
+}
+
+# Cloudflare ranges that an external real IP config does not trust (stale
+# config): requests from those edges would be checked against Cloudflare's
+# address, which is always allowed, so they would bypass the blocklist.
+realip_missing_cloudflare() {
+    local files trusted cf net
+    [ -s "$NBBI_STATE/realip.external" ] || return 0
+    mapfile -t files < "$NBBI_STATE/realip.external"
+    trusted=$(cat "${files[@]}" 2>/dev/null | sed 's/#.*//' | awk '$1 == "set_real_ip_from" { sub(/;$/, "", $2); print $2 }')
+    while IFS= read -r cf; do
+        net=${cf%/*}
+        [ -n "$(printf '%s\n' "$trusted" | nbbi_awk -v MODE=contains -v IP="$net" 2>/dev/null)" ] || echo "$cf"
+    done < <(cloudflare_ranges)
 }
 
 trusted_proxies() { split_list "${CFG[TRUSTED_PROXIES]}" | normalize_stream plain 0 0; }

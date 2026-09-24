@@ -107,7 +107,7 @@ cfg_save() {
 # Custom lists live in custom-lists.conf and are always active.
 LISTS="${CFG[LISTS]}"
 
-# HTTP status returned to blocked clients: 403, 404, 410, 429, 444 or 451.
+# Response for blocked clients: 403 (Forbidden) or 444 (close the connection).
 BLOCK_STATUS="${CFG[BLOCK_STATUS]}"
 
 # Real client IP behind proxies/CDNs: auto | managed | off
@@ -148,7 +148,9 @@ EOF
 # Validates CFG; prints the first problem and returns 1.
 cfg_validate() {
     local v
-    case ${CFG[BLOCK_STATUS]} in 403|404|410|429|444|451) ;; *) echo "BLOCK_STATUS must be 403, 404, 410, 429, 444 or 451"; return 1 ;; esac
+    # 404/410 are cached by CDNs such as Cloudflare: a blocked client could make
+    # the edge serve the error to everybody, so only 403 and 444 are allowed.
+    case ${CFG[BLOCK_STATUS]} in 403|444) ;; *) echo "BLOCK_STATUS must be 403 or 444"; return 1 ;; esac
     case ${CFG[REALIP_MODE]} in auto|managed|off) ;; *) echo "REALIP_MODE must be auto, managed or off"; return 1 ;; esac
     [[ ${CFG[REAL_IP_HEADER]} =~ ^[A-Za-z0-9_-]+$ ]] || { echo "REAL_IP_HEADER must be a plain header name"; return 1; }
     case ${CFG[GEOIP_ENABLED]} in yes|no) ;; *) echo "GEOIP_ENABLED must be yes or no"; return 1 ;; esac

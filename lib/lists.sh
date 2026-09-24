@@ -126,18 +126,23 @@ download_blocklists() {
 }
 
 download_cloudflare() {
-    local tmp dest="$NBBI_CACHE/cloudflare.txt" rc=0
+    local t4 t6 dest="$NBBI_CACHE/cloudflare.txt" norm
     mkdir -p "$NBBI_CACHE"
-    tmp=$(mktemp "$NBBI_CACHE/.cf.XXXXXX")
-    { fetch_raw "$NBBI_CF_V4" /dev/stdout && echo && fetch_raw "$NBBI_CF_V6" /dev/stdout; } > "$tmp" 2>/dev/null || rc=1
-    if [ "$rc" -eq 0 ] && [ "$(normalize_stream plain 0 0 < "$tmp" | grep -c .)" -ge 10 ]; then
-        normalize_stream plain 0 0 < "$tmp" | sort -u > "$dest"
+    t4=$(mktemp "$NBBI_CACHE/.cf4.XXXXXX")
+    t6=$(mktemp "$NBBI_CACHE/.cf6.XXXXXX")
+    norm=$(mktemp "$NBBI_CACHE/.cfn.XXXXXX")
+    if fetch_raw "$NBBI_CF_V4" "$t4" && fetch_raw "$NBBI_CF_V6" "$t6"; then
+        { cat "$t4"; echo; cat "$t6"; } | normalize_stream plain 0 0 | sort -u > "$norm"
+    fi
+    if [ "$(count_lines "$norm")" -ge 10 ]; then
+        chmod 0644 "$norm"
+        mv -f -- "$norm" "$dest"
         record_source cloudflare "$(count_lines "$dest")" fresh
     else
         warn "cloudflare: could not refresh the IP ranges, using the cached/bundled copy"
         record_source cloudflare "$(count_lines "$dest")" cache
     fi
-    rm -f -- "$tmp"
+    rm -f -- "$t4" "$t6" "$norm"
 }
 
 # Cloudflare ranges: cached copy if present, otherwise the bundled one.

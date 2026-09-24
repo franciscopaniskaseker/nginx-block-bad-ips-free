@@ -69,8 +69,8 @@ GeoIP (optional, disabled by default):
                              Addresses that belong to no country (default: allow)
 
 Enforcement:
-      --block-status CODE    HTTP status for blocked clients: 403 (default), 404, 410,
-                             429, 444 (close the connection) or 451
+      --block-status CODE    Response for blocked clients: 403 (default) or 444 (close
+                             the connection without answering)
       --panel auto|hestia|plesk|none
                              Control panel integration (default: auto-detect)
       --auto-inject          Plain nginx only: add the block include to every server {}
@@ -350,7 +350,8 @@ if ! "$NBBI_BIN" update; then
     exit 1
 fi
 
-if ! "$NGINX" -T 2>/dev/null | grep -qF "# configuration file $NBBI_NGINX_CONF:"; then
+# grep -c reads everything: an early exit would SIGPIPE nginx -T under pipefail.
+if ! "$NGINX" -T 2>/dev/null | grep -cF "# configuration file $NBBI_NGINX_CONF:" >/dev/null; then
     warn "nginx does not load $NBBI_NGINX_CONF: add 'include $NGINX_DIR/conf.d/*.conf;' inside http {} in $CONF_PATH"
 fi
 

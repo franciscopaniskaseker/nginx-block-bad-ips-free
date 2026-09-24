@@ -181,7 +181,10 @@ cmd_status() {
     fi
     case $(realip_effective) in
         managed)  printf '  %-16s %s\n' "Real IP:" "managed here (header ${CFG[REAL_IP_HEADER]}; Cloudflare${CFG[TRUSTED_PROXIES]:+ + ${CFG[TRUSTED_PROXIES]}} trusted)" ;;
-        external) printf '  %-16s %s\n' "Real IP:" "handled by existing config: $(paste -sd' ' "$NBBI_STATE/realip.external" 2>/dev/null)" ;;
+        external)
+            printf '  %-16s %s\n' "Real IP:" "handled by existing config: $(paste -sd' ' "$NBBI_STATE/realip.external" 2>/dev/null)"
+            f=$(realip_missing_cloudflare | paste -sd' ' -)
+            [ -n "$f" ] && printf '  %-16s %s\n' "" "WARNING: it does not trust Cloudflare ranges $f (update it or use REALIP_MODE=managed)" ;;
         off)      printf '  %-16s %s\n' "Real IP:" "off (the TCP peer address is checked)" ;;
     esac
     printf '  %-16s %s\n' "Block response:" "${CFG[BLOCK_STATUS]}"
