@@ -1,0 +1,507 @@
+#!/usr/bin/env bash
+# nginx-block-bad-ips - blocks known-bad IPs in nginx using free blocklists.
+# https://github.com/franciscopaniskaseker/nginx-block-bad-ips-free  (MIT License)
+set -uo pipefail
+# shellcheck source-path=SCRIPTDIR/..
+
+if [ -z "${BASH_VERSINFO:-}" ] || [ "${BASH_VERSINFO[0]}" -lt 4 ]; then
+    echo "nginx-block-bad-ips needs bash 4 or newer" >&2
+    exit 1
+fi
+
+SELF=$(readlink -f "${BASH_SOURCE[0]}")
+BASE=$(cd "$(dirname "$SELF")/.." && pwd)
+NBBI_LIB="$BASE/lib"
+NBBI_SHARE="$BASE/share"
+# shellcheck source=lib/common.sh
+. "$NBBI_LIB/common.sh"
+# shellcheck source=lib/lists.sh
+. "$NBBI_LIB/lists.sh"
+# shellcheck source=lib/render.sh
+. "$NBBI_LIB/render.sh"
+# shellcheck source=lib/panels.sh
+. "$NBBI_LIB/panels.sh"
+
+umask 022
+STAGE=""
+CFG_SNAPSHOT=""
+
+# shellcheck disable=SC2329  # invoked by the EXIT trap
+# On exit: drop the staging dir; if a configuration change failed, put the
+# configuration files back the way they were.
+cleanup() {
+    local rc=$? f
+    [ -n "$STAGE" ] && rm -rf -- "$STAGE"
+    if [ -n "$CFG_SNAPSHOT" ]; then
+        if [ "$rc" -ne 0 ]; then
+            for f in "$NBBI_CONF" "$NBBI_WHITELIST" "$NBBI_CUSTOM"; do
+                [ -f "$CFG_SNAPSHOT/$(basename "$f")" ] && cp -a -- "$CFG_SNAPSHOT/$(basename "$f")" "$f"
+            done
+            err "the change could not be applied; configuration files restored"
+        fi
+        rm -rf -- "$CFG_SNAPSHOT"
+    fi
+    return "$rc"
+}
+trap cleanup EXIT
+
+usage() {
+    cat <<EOF
+nginx-block-bad-ips $NBBI_VERSION - block known-bad IPs in nginx with free blocklists
+
+Usage: nginx-block-bad-ips <command> [options]
+
+Commands:
+  update                   Download the lists and apply them (run daily by cron)
+  apply                    Rebuild the nginx files from the cache and the configuration
+  sync                     Same as apply; also protects vhosts created since the last run (hourly cron)
+  status                   Show lists, counts, GeoIP, real IP mode and vhost coverage
+  check <ip>               Explain whether an IP is blocked, and by which list or rule
+  whitelist list           Show the whitelist
+  whitelist add <ip/cidr>...     Always allow addresses (applied immediately)
+  whitelist remove <ip/cidr>...  Remove addresses from the whitelist
+  lists                    Show every available list and which ones are enabled
+  lists enable <name>...   Enable catalog lists           lists disable <name>...
+  lists profile safe|aggressive   Replace the enabled lists with a profile
+  lists add-custom <name> <url>   Add your own list (http(s):// or file://, one IP/CIDR per line)
+  lists remove-custom <name>
+  geoip show               Show the GeoIP settings
+  geoip enable --countries CC[,CC] [--mode allow|deny] [--paths REGEX] [--unknown allow|block]
+  geoip disable
+  version                  Print the version
+
+Options:
+  -q, --quiet              Only log to $NBBI_LOG (used by cron)
+  -h, --help               Show this help (also: nginx-block-bad-ips <command> --help)
+
+Files:
+  $NBBI_CONF
+  $NBBI_WHITELIST
+  $NBBI_CUSTOM
+  Log: $NBBI_LOG
+
+nginx is only ever reloaded (never restarted). Every change is tested with
+"nginx -t" first and rolled back automatically if the test fails.
+EOF
+}
+
+# ------------------------------------------------------------------ apply ---
+
+last_run() {  # last_run OK|FAILED message
+    [ "$NBBI_DRY_RUN" = 1 ] && return 0
+    mkdir -p "$NBBI_STATE"
+    printf '%s|%s|%s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$1" "$2" > "$NBBI_STATE/last-run"
+}
+
+# do_apply yes|no  (yes = download first)
+do_apply() {
+    local download=$1 f changed entries
+    local gen=(realip.conf whitelist.geo blocklist.geo geoip-v4.geo geoip-v6.geo enforce.conf)
+    cfg_load
+    if ! f=$(cfg_validate); then die "invalid configuration: $f"; fi
+    nginx_bin >/dev/null || die "nginx is not installed"
+    nbbi_lock
+    mkdir -p "$NBBI_CACHE/lists" "$NBBI_STATE" "$NBBI_BACKUPS"
+    chmod 0700 "$NBBI_VAR" 2>/dev/null || true
+    if [ "$download" = yes ]; then
+        info "downloading lists"
+        download_all
+        resolve_realip
+    elif [ ! -s "$NBBI_STATE/realip.effective" ]; then
+        resolve_realip
+    fi
+
+    mkdir -p "$NBBI_NGINX_DIR"
+    STAGE=$(mktemp -d "$NBBI_NGINX_DIR/.stage.XXXXXX")
+    render_all "$STAGE"
+    entries=$(grep -c ' 1;$' "$STAGE/blocklist.geo" || true)
+
+    if [ "$NBBI_DRY_RUN" = 1 ]; then
+        for f in "${gen[@]}"; do cp -f "$STAGE/$f" "$NBBI_NGINX_DIR/$f"; done
+        cp -f "$STAGE/http.conf" "$NBBI_NGINX_CONF"
+        panel_sync
+        info "[dry-run] blocklist entries: $entries"
+        info "[dry-run] whitelist entries: $(grep -c ' 1;$' "$STAGE/whitelist.geo" || true)"
+        info "[dry-run] real IP mode: $(realip_effective)"
+        [ "${CFG[GEOIP_ENABLED]}" = yes ] && info "[dry-run] geoip: $(($(wc -l < "$STAGE/geoip-v4.geo") - 2)) IPv4 ranges, $(($(wc -l < "$STAGE/geoip-v6.geo") - 2)) IPv6 prefixes"
+        info "[dry-run] rendered files are in $NBBI_NGINX_DIR (nothing under the real nginx directory was changed)"
+        return 0
+    fi
+
+    txn_begin
+    changed=0
+    for f in "${gen[@]}"; do
+        install_if_changed "$STAGE/$f" "$NBBI_NGINX_DIR/$f" 0644 && changed=1
+    done
+    install_if_changed "$STAGE/http.conf" "$NBBI_NGINX_CONF" 0644 && changed=1
+    rm -rf -- "$STAGE"; STAGE=""
+    PANEL_CHANGED=0
+    panel_sync
+    [ "$PANEL_CHANGED" = 1 ] && changed=1
+
+    if [ "$changed" = 0 ] || [ "$TXN_COUNT" -eq 0 ]; then
+        txn_discard
+        info "no changes ($entries blocklist entries)"
+        last_run OK "no changes, $entries entries"
+        return 0
+    fi
+    if txn_finish "$([ "$download" = yes ] && echo update || echo apply)"; then
+        info "applied: $entries blocklist entries, nginx reloaded"
+        last_run OK "$entries entries"
+        return 0
+    fi
+    last_run FAILED "nginx -t failed, previous configuration restored"
+    return 1
+}
+
+# Snapshots the configuration files; cleanup() restores them if the command fails.
+with_config_rollback() {
+    local f
+    CFG_SNAPSHOT=$(mktemp -d)
+    for f in "$NBBI_CONF" "$NBBI_WHITELIST" "$NBBI_CUSTOM"; do
+        [ -f "$f" ] && cp -a -- "$f" "$CFG_SNAPSHOT/$(basename "$f")"
+    done
+    "$@"
+}
+
+# ----------------------------------------------------------------- status ---
+
+cmd_status() {
+    local panel lr pid f name url n st ts
+    cfg_load
+    panel=$(effective_panel)
+    echo "nginx-block-bad-ips $NBBI_VERSION"
+    printf '  %-16s %s\n' "OS:" "$(os_id)"
+    printf '  %-16s %s%s\n' "Panel:" "$panel" "$([ "${CFG[PANEL]}" = auto ] && echo " (auto-detected)")"
+    pid=$(nginx_master_pid)
+    if [ -n "$pid" ]; then printf '  %-16s %s\n' "nginx:" "running (master pid $pid)"; else printf '  %-16s %s\n' "nginx:" "NOT running"; fi
+    if [ -f "$NBBI_STATE/last-run" ]; then
+        IFS='|' read -r ts st lr < "$NBBI_STATE/last-run"
+        printf '  %-16s %s %s (%s)\n' "Last run:" "$ts" "$st" "$lr"
+    fi
+    case $(realip_effective) in
+        managed)  printf '  %-16s %s\n' "Real IP:" "managed here (header ${CFG[REAL_IP_HEADER]}; Cloudflare${CFG[TRUSTED_PROXIES]:+ + ${CFG[TRUSTED_PROXIES]}} trusted)" ;;
+        external) printf '  %-16s %s\n' "Real IP:" "handled by existing config: $(paste -sd' ' "$NBBI_STATE/realip.external" 2>/dev/null)" ;;
+        off)      printf '  %-16s %s\n' "Real IP:" "off (the TCP peer address is checked)" ;;
+    esac
+    printf '  %-16s %s\n' "Block response:" "${CFG[BLOCK_STATUS]}"
+    echo "  Lists:"
+    while IFS= read -r name; do
+        n=$(count_lines "$(list_cache "$name")")
+        st=$(awk -F'|' -v n="$name" '$1 == n { print $3 "|" $4 }' "$NBBI_STATE/sources.status" 2>/dev/null)
+        [ -n "$st" ] && st="${st%%|*} download $(date -d "@${st##*|}" '+%Y-%m-%d %H:%M' 2>/dev/null)"
+        printf '    %-20s %8s entries  %s\n' "$name" "$n" "${st:-never downloaded}"
+    done < <(split_list "${CFG[LISTS]}")
+    while read -r name url; do
+        n=$(count_lines "$(custom_cache "$name")")
+        printf '    %-20s %8s entries  custom: %s\n' "$name" "$n" "$url"
+    done < <(custom_lists)
+    if [ -f "$NBBI_NGINX_DIR/blocklist.geo" ]; then
+        printf '  %-16s %s\n' "Blocked:" "$(grep -c ' 1;$' "$NBBI_NGINX_DIR/blocklist.geo" || true) unique entries in effect"
+    fi
+    n=$(normalize_stream plain 0 0 < "$NBBI_WHITELIST" 2>/dev/null | grep -c . || true)
+    printf '  %-16s %s\n' "Whitelist:" "$n entries in whitelist.txt; $(grep -c ' 1;$' "$NBBI_NGINX_DIR/whitelist.geo" 2>/dev/null || echo 0) always-allowed entries in effect (incl. Cloudflare, private ranges, this server)"
+    if [ "${CFG[GEOIP_ENABLED]}" = yes ]; then
+        printf '  %-16s %s\n' "GeoIP:" "${CFG[GEOIP_MODE]} ${CFG[GEOIP_COUNTRIES]} on ${CFG[GEOIP_PATHS]:-the whole site}, unknown=${CFG[GEOIP_UNKNOWN]}"
+    else
+        printf '  %-16s %s\n' "GeoIP:" "disabled"
+    fi
+    read -r f n < <(panel_coverage)
+    case $panel in
+        hestia) printf '  %-16s %s\n' "Coverage:" "$f of $n Hestia domain server blocks enforce the block" ;;
+        plesk)  printf '  %-16s %s\n' "Coverage:" "$f of $n Plesk domains enforce the block (suspended domains are skipped by Plesk)" ;;
+        none)
+            if [ "${CFG[AUTO_INJECT]}" = yes ]; then
+                printf '  %-16s %s\n' "Coverage:" "$f of $n server blocks in sites-enabled/ and conf.d/ enforce the block"
+            else
+                printf '  %-16s %s\n' "Coverage:" "manual: add \"include $NBBI_ENFORCE;\" inside each server {} block ($f of $n found)"
+            fi ;;
+    esac
+    printf '  %-16s %s\n' "Cron:" "$([ -f "$NBBI_CRON" ] && echo "$NBBI_CRON" || echo "not installed")"
+}
+
+# ------------------------------------------------------------------ check ---
+
+cmd_check() {
+    local ip=${1:-} canon m blocked=0 wl=0 name url f cc sel
+    case $ip in
+        ""|-h|--help) echo "Usage: nginx-block-bad-ips check <ip>   (explains whether the IP is blocked and why)"; return 0 ;;
+    esac
+    cfg_load
+    canon=$(normalize_one "$ip")
+    [ -n "$canon" ] && [[ $canon != */* ]] || die "'$ip' is not a single IPv4/IPv6 address"
+    echo "Checking $canon"
+    contains() { nbbi_awk -v MODE=contains -v IP="$canon" "$@" 2>/dev/null; }
+
+    m=$(contains < <(normalize_stream plain 0 0 < "$NBBI_SHARE/builtin-whitelist.txt"))
+    [ -n "$m" ] && { echo "  allowed:  built-in private/reserved range $m"; wl=1; }
+    m=$(contains < <(cloudflare_ranges))
+    [ -n "$m" ] && { echo "  allowed:  Cloudflare range $m"; wl=1; }
+    m=$(contains < <(trusted_proxies))
+    [ -n "$m" ] && { echo "  allowed:  trusted proxy $m"; wl=1; }
+    m=$(contains < <(server_addresses | normalize_stream plain 0 0))
+    [ -n "$m" ] && { echo "  allowed:  address of this server"; wl=1; }
+    if [ -r "$NBBI_WHITELIST" ]; then
+        m=$(contains < <(normalize_stream plain 0 0 < "$NBBI_WHITELIST") | paste -sd' ' -)
+        [ -n "$m" ] && { echo "  allowed:  whitelist.txt entry $m"; wl=1; }
+    fi
+
+    while IFS= read -r name; do
+        f=$(list_cache "$name")
+        [ -s "$f" ] || continue
+        m=$(contains "$f" | paste -sd' ' -)
+        [ -n "$m" ] && { echo "  listed:   $name ($m)"; blocked=1; }
+    done < <(split_list "${CFG[LISTS]}")
+    while read -r name url; do
+        f=$(custom_cache "$name")
+        [ -s "$f" ] || continue
+        m=$(contains "$f" | paste -sd' ' -)
+        [ -n "$m" ] && { echo "  listed:   custom list $name ($m)"; blocked=1; }
+    done < <(custom_lists)
+
+    local geo=""
+    if [ "${CFG[GEOIP_ENABLED]}" = yes ]; then
+        sel=" $(geoip_countries | paste -sd' ' -) "
+        if [[ $canon == *:* ]]; then
+            cc=""
+            for f in "$NBBI_CACHE"/geoip/v6/*.txt; do
+                [ -s "$f" ] || continue
+                [ -n "$(contains "$f")" ] && { cc=$(basename "$f" .txt); break; }
+            done
+            [ -z "$cc" ] && [ -n "$(printf '2000::/3\n' | contains)" ] && cc="other"
+        else
+            m=$(find "$NBBI_CACHE/geoip/v4" -name '*.zone' ! -name 'zz.zone' -print0 2>/dev/null | xargs -0 -r awk -v MODE=contains -v IP="$canon" -v SHOWFILE=1 -f "$NBBI_LIB/ipaddr.awk" 2>/dev/null | head -1)
+            cc=$(basename "${m%%$'\t'*}" .zone 2>/dev/null)
+        fi
+        if [ -z "$cc" ]; then
+            geo="no country"
+            [ "${CFG[GEOIP_UNKNOWN]}" = block ] && geo="$geo -> blocked" || geo="$geo -> allowed"
+        elif [[ $sel == *" $cc "* ]]; then
+            geo="country $(echo "$cc" | tr '[:lower:]' '[:upper:]') (selected)"
+            [ "${CFG[GEOIP_MODE]}" = allow ] && geo="$geo -> allowed" || geo="$geo -> blocked"
+        else
+            geo="country $(echo "$cc" | tr '[:lower:]' '[:upper:]') (not selected)"
+            [ "${CFG[GEOIP_MODE]}" = allow ] && geo="$geo -> blocked" || geo="$geo -> allowed"
+        fi
+        echo "  geoip:    $geo${CFG[GEOIP_PATHS]:+ on URIs matching ${CFG[GEOIP_PATHS]}}"
+    fi
+
+    if [ "$wl" = 1 ]; then
+        echo "Verdict: ALLOWED (whitelisted; the whitelist always wins)"
+    elif [ "$blocked" = 1 ]; then
+        echo "Verdict: BLOCKED with HTTP ${CFG[BLOCK_STATUS]} on every protected site"
+    elif [[ $geo == *blocked ]]; then
+        echo "Verdict: BLOCKED by GeoIP${CFG[GEOIP_PATHS]:+ (only on URIs matching ${CFG[GEOIP_PATHS]})}"
+    else
+        echo "Verdict: ALLOWED"
+    fi
+}
+
+# -------------------------------------------------------------- whitelist ---
+
+cmd_whitelist() {
+    local sub=${1:-list} e canon tmp added=0 removed=0
+    shift || true
+    case $sub in
+        -h|--help) echo "Usage: nginx-block-bad-ips whitelist list | add <ip/cidr>... | remove <ip/cidr>..."; return 0 ;;
+        list)
+            [ -r "$NBBI_WHITELIST" ] && grep -v -e '^[[:space:]]*#' -e '^[[:space:]]*$' "$NBBI_WHITELIST"
+            return 0 ;;
+        add|remove) require_root; [ $# -gt 0 ] || die "usage: nginx-block-bad-ips whitelist $sub <ip/cidr>..." ;;
+        *) die "unknown whitelist command '$sub'" ;;
+    esac
+    touch "$NBBI_WHITELIST"
+    for e in "$@"; do
+        canon=$(normalize_one "$e")
+        [ -n "$canon" ] || die "'$e' is not a valid IPv4/IPv6 address or CIDR"
+        if [ "$sub" = add ]; then
+            if normalize_stream plain 0 0 < "$NBBI_WHITELIST" | grep -qxF -- "$canon"; then
+                info "$canon is already whitelisted"
+            else
+                printf '%s\n' "$canon" >> "$NBBI_WHITELIST"; added=$((added + 1))
+                info "whitelisted $canon"
+            fi
+        else
+            local line tok found=0
+            tmp=$(mktemp "$NBBI_ETC/.wl.XXXXXX")
+            while IFS= read -r line || [ -n "$line" ]; do
+                tok=$(printf '%s\n' "${line%%#*}" | awk '{ print $1 }')
+                if [ -n "$tok" ] && [ "$(normalize_one "$tok")" = "$canon" ]; then
+                    found=1
+                    continue
+                fi
+                printf '%s\n' "$line" >> "$tmp"
+            done < "$NBBI_WHITELIST"
+            if [ "$found" = 1 ]; then
+                chmod 0644 "$tmp"; mv -f "$tmp" "$NBBI_WHITELIST"; removed=$((removed + 1))
+                info "removed $canon from the whitelist"
+            else
+                rm -f "$tmp"; warn "$canon is not in the whitelist"
+            fi
+        fi
+    done
+    if [ $((added + removed)) -gt 0 ]; then
+        do_apply no
+    fi
+}
+
+# ------------------------------------------------------------------ lists ---
+
+cmd_lists() {
+    local sub=${1:-show} name url cur new p
+    shift || true
+    cfg_load
+    case $sub in
+        -h|--help)
+            echo "Usage: nginx-block-bad-ips lists [show | enable <name>... | disable <name>... | profile safe|aggressive | add-custom <name> <url> | remove-custom <name>]"
+            return 0 ;;
+        show)
+            printf '%-3s %-18s %-11s %9s  %s\n' "ON" "NAME" "PROFILE" "ENTRIES" "DESCRIPTION"
+            while IFS='|' read -r name p _ url desc; do
+                cur=" "; [[ ",${CFG[LISTS]}," == *",$name,"* ]] && cur="*"
+                printf '%-3s %-18s %-11s %9s  %s\n' "$cur" "$name" "$p" "$(count_lines "$(list_cache "$name")")" "$desc"
+            done < <(catalog_lines)
+            if [ -n "$(custom_lists)" ]; then
+                echo
+                echo "Custom lists (always active, from $NBBI_CUSTOM):"
+                while read -r name url; do
+                    printf '%-3s %-18s %-11s %9s  %s\n' "*" "$name" "custom" "$(count_lines "$(custom_cache "$name")")" "$url"
+                done < <(custom_lists)
+            fi
+            return 0 ;;
+    esac
+    require_root
+    case $sub in
+        enable|disable)
+            [ $# -gt 0 ] || die "usage: nginx-block-bad-ips lists $sub <name>..."
+            cur=",${CFG[LISTS]},"
+            for name in "$@"; do
+                catalog_get "$name" || die "unknown list '$name' (see: nginx-block-bad-ips lists)"
+                if [ "$sub" = enable ]; then
+                    [[ $cur == *",$name,"* ]] || cur="$cur$name,"
+                else
+                    cur=${cur//,$name,/,}
+                fi
+            done
+            new=$(echo "$cur" | sed 's/^,*//; s/,*$//; s/,,*/,/g')
+            CFG[LISTS]=$new
+            cfg_save
+            info "enabled lists: ${new:-none}"
+            if [ "$sub" = enable ]; then do_apply yes; else do_apply no; fi ;;
+        profile)
+            new=$(profile_lists "${1:-}") || die "usage: nginx-block-bad-ips lists profile safe|aggressive"
+            CFG[LISTS]=$new
+            cfg_save
+            info "enabled lists: $new"
+            do_apply yes ;;
+        add-custom)
+            name=${1:-}; url=${2:-}
+            valid_list_name "$name" || die "list name must be 1-40 characters: a-z 0-9 _ - (starting with a letter or digit)"
+            valid_url "$url" || die "URL must start with http://, https:// or file://"
+            catalog_get "$name" && die "'$name' is a catalog list; use: nginx-block-bad-ips lists enable $name"
+            custom_lists | awk -v n="$name" '$1 == n { f = 1 } END { exit !f }' && die "custom list '$name' already exists"
+            touch "$NBBI_CUSTOM"
+            printf '%s %s\n' "$name" "$url" >> "$NBBI_CUSTOM"
+            info "added custom list $name"
+            do_apply yes ;;
+        remove-custom)
+            name=${1:-}
+            custom_lists | awk -v n="$name" '$1 == n { f = 1 } END { exit !f }' || die "no custom list named '$name'"
+            p=$(mktemp "$NBBI_ETC/.cl.XXXXXX")
+            awk -v n="$name" '$1 != n' "$NBBI_CUSTOM" > "$p"
+            chmod 0644 "$p"; mv -f "$p" "$NBBI_CUSTOM"
+            rm -f "$(custom_cache "$name")"
+            info "removed custom list $name"
+            do_apply no ;;
+        *) die "unknown lists command '$sub'" ;;
+    esac
+}
+
+# ------------------------------------------------------------------ geoip ---
+
+cmd_geoip() {
+    local sub=${1:-show}
+    shift || true
+    cfg_load
+    case $sub in
+        -h|--help)
+            cat <<EOF
+Usage: nginx-block-bad-ips geoip show
+       nginx-block-bad-ips geoip enable --countries CC[,CC...] [--mode allow|deny]
+                                        [--paths REGEX] [--unknown allow|block]
+       nginx-block-bad-ips geoip disable
+
+  --mode allow    only the listed countries may access (default)
+  --mode deny     the listed countries are blocked
+  --paths REGEX   only apply GeoIP to URIs matching this case-insensitive regex,
+                  e.g. '^/(wp-login\.php|xmlrpc\.php)' (default: the whole site)
+  --unknown       addresses that belong to no country: allow (default) or block
+Country data: ipdeny.com (free, derived from the regional internet registries).
+EOF
+            return 0 ;;
+        show)
+            echo "GEOIP_ENABLED=${CFG[GEOIP_ENABLED]}"
+            echo "GEOIP_MODE=${CFG[GEOIP_MODE]}"
+            echo "GEOIP_COUNTRIES=${CFG[GEOIP_COUNTRIES]}"
+            echo "GEOIP_PATHS=${CFG[GEOIP_PATHS]}"
+            echo "GEOIP_UNKNOWN=${CFG[GEOIP_UNKNOWN]}"
+            return 0 ;;
+        enable)
+            require_root
+            while [ $# -gt 0 ]; do
+                case $1 in
+                    --countries) CFG[GEOIP_COUNTRIES]=$(echo "${2:-}" | tr '[:lower:]' '[:upper:]' | tr -d ' '); shift 2 ;;
+                    --mode) CFG[GEOIP_MODE]=${2:-}; shift 2 ;;
+                    --paths) CFG[GEOIP_PATHS]=${2:-}; shift 2 ;;
+                    --unknown) CFG[GEOIP_UNKNOWN]=${2:-}; shift 2 ;;
+                    *) die "unknown option '$1' (see: nginx-block-bad-ips geoip --help)" ;;
+                esac
+            done
+            CFG[GEOIP_ENABLED]=yes
+            local e
+            e=$(cfg_validate) || die "$e"
+            cfg_save
+            info "GeoIP enabled: ${CFG[GEOIP_MODE]} ${CFG[GEOIP_COUNTRIES]} on ${CFG[GEOIP_PATHS]:-the whole site}"
+            do_apply yes ;;
+        disable)
+            require_root
+            CFG[GEOIP_ENABLED]=no
+            cfg_save
+            info "GeoIP disabled"
+            do_apply no ;;
+        *) die "unknown geoip command '$sub'" ;;
+    esac
+}
+
+# ------------------------------------------------------------------- main ---
+
+main() {
+    local cmd="" args=()
+    while [ $# -gt 0 ]; do
+        case $1 in
+            -q|--quiet) NBBI_QUIET=1 ;;
+            --dry-run) NBBI_DRY_RUN=1 ;;
+            -h|--help) if [ -z "$cmd" ]; then usage; exit 0; else args+=("$1"); fi ;;
+            -V|--version) cmd=version ;;
+            *) if [ -z "$cmd" ]; then cmd=$1; else args+=("$1"); fi ;;
+        esac
+        shift
+    done
+    case $cmd in
+        ""|help) usage ;;
+        version) echo "nginx-block-bad-ips $NBBI_VERSION" ;;
+        update|apply|sync)
+            if [ "${args[0]:-}" = -h ] || [ "${args[0]:-}" = --help ]; then usage; exit 0; fi
+            [ "$NBBI_DRY_RUN" = 1 ] || require_root
+            if [ "$cmd" = update ]; then do_apply yes; else do_apply no; fi ;;
+        status) cmd_status ;;
+        check) cmd_check "${args[@]}" ;;
+        whitelist) with_config_rollback cmd_whitelist "${args[@]}" ;;
+        lists) with_config_rollback cmd_lists "${args[@]}" ;;
+        geoip) with_config_rollback cmd_geoip "${args[@]}" ;;
+        *) echo "unknown command '$cmd'" >&2; usage >&2; exit 2 ;;
+    esac
+}
+
+main "$@"
+exit $?

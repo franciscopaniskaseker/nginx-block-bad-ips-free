@@ -1,0 +1,14 @@
+# nginx-block-bad-ips list catalog
+# name|profile|format|url|description
+# profile: safe = installed by default, aggressive = added by --profile aggressive,
+#          extra = only when enabled by name
+spamhaus_drop|safe|plain|https://www.spamhaus.org/drop/drop.txt|Spamhaus DROP: netblocks hijacked or leased by spammers and cybercriminals (includes the former EDROP)
+spamhaus_drop_v6|safe|json-cidr|https://www.spamhaus.org/drop/drop_v6.json|Spamhaus DROP for IPv6
+firehol_level1|safe|plain|https://raw.githubusercontent.com/firehol/blocklist-ipsets/master/firehol_level1.netset|FireHOL level 1: conservative aggregate (Spamhaus DROP, DShield top attackers, Feodo botnet C2, bogons)
+et_compromised|safe|plain|https://rules.emergingthreats.net/blockrules/compromised-ips.txt|Emerging Threats: hosts known to be compromised and used in attacks
+blocklist_de|aggressive|plain|https://lists.blocklist.de/lists/all.txt|blocklist.de: IPs reported by fail2ban servers in the last 48h (SSH, WordPress, mail brute force)
+cins_army|aggressive|plain|https://cinsscore.com/list/ci-badguys.txt|CINS Army: active scanners and attackers seen by the Sentinel IPS network
+ipsum_3|aggressive|plain|https://raw.githubusercontent.com/stamparm/ipsum/master/levels/3.txt|IPsum level 3: IPs present on 3 or more public blacklists
+greensnow|aggressive|plain|https://blocklist.greensnow.co/greensnow.txt|GreenSnow: brute force and port scanning sources
+firehol_level2|extra|plain|https://raw.githubusercontent.com/firehol/blocklist-ipsets/master/firehol_level2.netset|FireHOL level 2: attacks seen in the last 48h (broader, more false positives)
+firehol_level3|extra|plain|https://raw.githubusercontent.com/firehol/blocklist-ipsets/master/firehol_level3.netset|FireHOL level 3: attacks, spyware and viruses seen in the last 30 days (broad)

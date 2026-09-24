@@ -1,0 +1,17 @@
+# nginx-block-bad-ips whitelist: addresses here are ALWAYS allowed, even if a
+# blocklist or a GeoIP rule would block them (the whitelist always wins).
+#
+# One IPv4/IPv6 address or CIDR per line. Comments start with #.
+# After editing by hand run:  nginx-block-bad-ips apply
+# Or use:                     nginx-block-bad-ips whitelist add 203.0.113.10
+#
+# Always allowed without being listed here: Cloudflare ranges, private and
+# reserved ranges (10/8, 172.16/12, 192.168/16, 100.64/10, 127/8, ...),
+# this server's own addresses and the trusted proxies from the configuration.
+#
+# This file is backed up to /root/ by uninstall.sh.
+#
+# Examples:
+# 203.0.113.10        # office
+# 198.51.100.0/24     # monitoring provider
+# 2001:db8:1234::/48  # IPv6 office network

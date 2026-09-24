@@ -1,0 +1,15 @@
+# nginx-block-bad-ips custom blocklists. Every list here is always active.
+#
+# Format: <name> <url>
+#   name: 1-40 characters, a-z 0-9 _ - (must not clash with a catalog list)
+#   url:  http://, https:// or file:///absolute/path
+# The list must contain one IPv4/IPv6 address or CIDR per line (first word of
+# each line; comments with # or ; are ignored). Entries broader than /8 (IPv4)
+# or /16 (IPv6) are ignored for safety.
+#
+# After editing by hand run:  nginx-block-bad-ips update
+# Or use:                     nginx-block-bad-ips lists add-custom <name> <url>
+#
+# Examples:
+# my_company_list https://example.com/blocklist.txt
+# local_bans      file:///etc/nginx-block-bad-ips/local-bans.txt
