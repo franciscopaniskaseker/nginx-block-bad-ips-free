@@ -1,0 +1,41 @@
+# nginx-block-bad-ips configuration. Edit with care, or use the CLI:
+#   nginx-block-bad-ips --help
+# After editing by hand run: nginx-block-bad-ips update
+
+# Blocklists to use, comma separated (see: nginx-block-bad-ips lists).
+# Custom lists live in custom-lists.conf and are always active.
+LISTS="spamhaus_drop,spamhaus_drop_v6,firehol_level1,et_compromised"
+
+# Response for blocked clients: 403 (Forbidden) or 444 (close the connection).
+BLOCK_STATUS="403"
+
+# Real client IP behind proxies/CDNs: auto | managed | off
+#   auto    = keep an existing real_ip_header config if nginx already has one,
+#             otherwise behave as managed
+#   managed = this product writes set_real_ip_from + real_ip_header
+REALIP_MODE="auto"
+REAL_IP_HEADER="CF-Connecting-IP"
+# Extra trusted proxies (comma separated CIDRs). Cloudflare is always trusted.
+TRUSTED_PROXIES=""
+
+# Optional GeoIP (country) blocking. GEOIP_MODE: allow = only the listed
+# countries pass, deny = the listed countries are blocked. GEOIP_PATHS is an
+# optional case-insensitive regex on the URI (empty = the whole site).
+# GEOIP_UNKNOWN: what to do with addresses that belong to no country.
+GEOIP_ENABLED="no"
+GEOIP_MODE="allow"
+GEOIP_COUNTRIES=""
+GEOIP_PATHS=""
+GEOIP_UNKNOWN="allow"
+
+# Panel integration: auto | hestia | plesk | none
+PANEL="auto"
+# Plain nginx only: add the enforcement include to server blocks automatically.
+AUTO_INJECT="no"
+
+# nginx configuration directory.
+NGINX_DIR="/etc/nginx"
+
+# Daily update time (chosen at random during install to spread load).
+CRON_MINUTE=""
+CRON_HOUR=""
