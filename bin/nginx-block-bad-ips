@@ -283,7 +283,11 @@ cmd_check() {
             geo="country $(echo "$cc" | tr '[:lower:]' '[:upper:]') (selected)"
             [ "${CFG[GEOIP_MODE]}" = allow ] && geo="$geo -> allowed" || geo="$geo -> blocked"
         else
-            geo="country $(echo "$cc" | tr '[:lower:]' '[:upper:]') (not selected)"
+            if [ "$cc" = other ]; then
+                geo="another country (not selected)"
+            else
+                geo="country $(echo "$cc" | tr '[:lower:]' '[:upper:]') (not selected)"
+            fi
             [ "${CFG[GEOIP_MODE]}" = allow ] && geo="$geo -> blocked" || geo="$geo -> allowed"
         fi
         echo "  geoip:    $geo${CFG[GEOIP_PATHS]:+ on URIs matching ${CFG[GEOIP_PATHS]}}"
@@ -439,6 +443,8 @@ Usage: nginx-block-bad-ips geoip show
   --paths REGEX   only apply GeoIP to URIs matching this case-insensitive regex,
                   e.g. '^/(wp-login\.php|xmlrpc\.php)' (default: the whole site)
   --unknown       addresses that belong to no country: allow (default) or block
+Each "geoip enable" replaces the previous GeoIP settings: options you leave
+out go back to the defaults above.
 Country data: ipdeny.com (free, derived from the regional internet registries).
 EOF
             return 0 ;;
@@ -451,6 +457,12 @@ EOF
             return 0 ;;
         enable)
             require_root
+            # Each "geoip enable" defines the whole policy: options that are
+            # not given go back to their documented defaults.
+            CFG[GEOIP_COUNTRIES]=""
+            CFG[GEOIP_MODE]=allow
+            CFG[GEOIP_PATHS]=""
+            CFG[GEOIP_UNKNOWN]=allow
             while [ $# -gt 0 ]; do
                 case $1 in
                     --countries) CFG[GEOIP_COUNTRIES]=$(echo "${2:-}" | tr '[:lower:]' '[:upper:]' | tr -d ' '); shift 2 ;;
@@ -460,6 +472,7 @@ EOF
                     *) die "unknown option '$1' (see: nginx-block-bad-ips geoip --help)" ;;
                 esac
             done
+            [ -n "${CFG[GEOIP_COUNTRIES]}" ] || die "geoip enable needs --countries (see: nginx-block-bad-ips geoip --help)"
             CFG[GEOIP_ENABLED]=yes
             local e
             e=$(cfg_validate) || die "$e"
