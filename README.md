@@ -259,6 +259,22 @@ In `auto` mode, `status` and the daily update warn when the existing configurati
 current Cloudflare ranges. Without those ranges, visitors reaching you through the missing edges
 would not be checked.
 
+### Behind a caching CDN
+
+The block happens on your server, so it only applies to requests that reach it. This was
+field-tested through Cloudflare:
+
+- **Uncached requests are blocked.** Logins, forms, POSTs, admin pages and any page the CDN
+  does not have in cache get the block response, based on the visitor's real IP.
+- **Cached pages are still served.** Pages the CDN serves from its own cache never reach nginx,
+  so a blocked IP can still read them. To stop those too, block at the CDN (for example
+  Cloudflare WAF custom rules or IP Access Rules).
+- **Keep block responses out of the CDN cache.** Cloudflare does not cache 403 responses by
+  default. If you use cache rules that force caching of every status code, exclude 403 and 4xx
+  responses. Otherwise one blocked visitor could make the CDN serve the 403 to everybody.
+  With `--block-status 444` the connection is closed instead, and Cloudflare shows the visitor
+  its own error page.
+
 ## GeoIP (optional)
 
 GeoIP is **off by default**. Enable it at install time or later:
