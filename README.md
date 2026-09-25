@@ -85,9 +85,9 @@ An hourly `sync` adds the include to domains created after the install.
 | Ubuntu 22.04, 26.04 | Plesk Obsidian 18.0 | Field-tested |
 | Rocky Linux 8 | Plesk Obsidian 18.0 | Field-tested |
 | AlmaLinux 10 | Plesk Obsidian 18.0 | Field-tested |
-| Ubuntu 26.04 | plain nginx (distro package, `sites-enabled` symlinks, `--auto-inject`) | Field-tested |
+| Ubuntu 24.04, 26.04 | plain nginx (distro package, `sites-enabled` symlinks, `--auto-inject`; mawk and gawk) | Field-tested |
 | Rocky Linux 8, 9, 10 | plain nginx (distro package 1.14 / 1.20 / 1.26, `--auto-inject`, SELinux enforcing) | Field-tested |
-| Ubuntu 22.04 / 24.04 | plain nginx | Supported, not yet field-tested |
+| Ubuntu 22.04 | plain nginx | Supported, not yet field-tested |
 | AlmaLinux 8, 9 | Plesk or plain nginx | Supported, not yet field-tested |
 | AlmaLinux 10 | plain nginx | Supported, not yet field-tested |
 
