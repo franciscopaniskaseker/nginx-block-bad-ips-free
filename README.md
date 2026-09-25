@@ -84,22 +84,22 @@ An hourly `sync` adds the include to domains created after the install.
 | Ubuntu 24.04 | HestiaCP 1.9 (nginx + Apache) | Field-tested |
 | Ubuntu 22.04, 26.04 | Plesk Obsidian 18.0 | Field-tested |
 | Rocky Linux 8 | Plesk Obsidian 18.0 | Field-tested |
-| AlmaLinux 10 | Plesk Obsidian 18.0 (install with `--force`, see below) | Field-tested |
+| AlmaLinux 10 | Plesk Obsidian 18.0 | Field-tested |
 | Ubuntu 26.04 | plain nginx (distro package, `sites-enabled` symlinks, `--auto-inject`) | Field-tested |
 | Rocky Linux 8, 9, 10 | plain nginx (distro package 1.14 / 1.20 / 1.26, `--auto-inject`, SELinux enforcing) | Field-tested |
 | Ubuntu 22.04 / 24.04 | plain nginx | Supported, not yet field-tested |
+| AlmaLinux 8, 9 | Plesk or plain nginx | Supported, not yet field-tested |
+| AlmaLinux 10 | plain nginx | Supported, not yet field-tested |
 
-On Rocky Linux, SELinux labels of the generated files are restored with `restorecon`.
-
-AlmaLinux is binary-compatible with Rocky Linux but is not in the official list yet, so the
-installer asks for `--force` there.
+On Rocky Linux and AlmaLinux, SELinux labels of the generated files are restored with
+`restorecon`.
 
 Panel support also depends on the panel vendor supporting that OS: HestiaCP runs on
 Debian/Ubuntu only, and Plesk supports Rocky Linux 8 but not Rocky Linux 9 or 10 (on EL9/EL10
 Plesk runs on AlmaLinux, RHEL or CloudLinux).
 
 Requirements:
-- nginx with the realip module. It is included in the nginx builds of Ubuntu, Rocky Linux,
+- nginx with the realip module. It is included in the nginx builds of Ubuntu, Rocky Linux, AlmaLinux,
   nginx.org, HestiaCP and Plesk.
 - bash 4+, curl, cron and logrotate. Missing packages are installed with your confirmation, or
   automatically with `--yes`.

@@ -4,6 +4,8 @@
 
 First public release.
 
+- Supported: Rocky Linux 8/9/10, AlmaLinux 8/9/10 and Ubuntu 22.04/24.04/26.04, with HestiaCP,
+  Plesk or plain nginx.
 - `install.sh` / `uninstall.sh` with `--help`, `--dry-run` (install) and `--yes`.
 - Free blocklist catalog with a `safe` default profile (Spamhaus DROP v4/v6, FireHOL level 1,
   Emerging Threats compromised) and an `aggressive` profile (adds blocklist.de, CINS Army,

@@ -24,9 +24,10 @@ usage() {
 nginx-block-bad-ips $NBBI_VERSION installer
 
 Blocks known-bad IP addresses in nginx using free, public blocklists.
-Works with HestiaCP, Plesk and plain nginx on Rocky Linux 8/9/10 and
-Ubuntu 22.04/24.04/26.04. Re-running it upgrades the installation and keeps
-your configuration and whitelist (flags you pass override stored settings).
+Works with HestiaCP, Plesk and plain nginx on Rocky Linux 8/9/10,
+AlmaLinux 8/9/10 and Ubuntu 22.04/24.04/26.04. Re-running it upgrades the
+installation and keeps your configuration and whitelist (flags you pass
+override stored settings).
 
 Usage: sudo ./install.sh [options]
 
@@ -138,7 +139,7 @@ if [ "$(os_supported)" != supported ]; then
     if [ "$FORCE" = 1 ]; then
         warn "operating system '$(os_id)' is not supported; continuing because of --force"
     else
-        die "operating system '$(os_id)' is not supported (Rocky 8/9/10, Ubuntu 22.04/24.04/26.04). Use --force to try anyway."
+        die "operating system '$(os_id)' is not supported (Rocky 8/9/10, AlmaLinux 8/9/10, Ubuntu 22.04/24.04/26.04). Use --force to try anyway."
     fi
 fi
 

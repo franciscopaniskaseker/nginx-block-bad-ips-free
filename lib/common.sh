@@ -426,6 +426,7 @@ os_supported() {
     major=${ver%%.*}
     case "$id:$major" in
         rocky:8|rocky:9|rocky:10) echo supported ;;
+        almalinux:8|almalinux:9|almalinux:10) echo supported ;;
         ubuntu:22|ubuntu:24|ubuntu:26) echo supported ;;
         *) echo unsupported ;;
     esac
