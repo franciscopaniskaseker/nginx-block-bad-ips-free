@@ -87,6 +87,8 @@ An hourly `sync` adds the include to domains created after the install.
 | AlmaLinux 10 | Plesk Obsidian 18.0 | Field-tested |
 | Ubuntu 22.04, 24.04, 26.04 | plain nginx (distro package 1.18 / 1.24 / 1.28, `sites-enabled` symlinks, `--auto-inject`; mawk and gawk) | Field-tested |
 | Rocky Linux 8, 9, 10 | plain nginx (distro package 1.14 / 1.20 / 1.26, `--auto-inject`, SELinux enforcing) | Field-tested |
+| Ubuntu 22.04 | HestiaCP | Supported, not yet field-tested |
+| Ubuntu 24.04 | Plesk | Supported, not yet field-tested |
 | AlmaLinux 8, 9 | Plesk or plain nginx | Supported, not yet field-tested |
 | AlmaLinux 10 | plain nginx | Supported, not yet field-tested |
 
@@ -383,7 +385,7 @@ own configuration), that configuration is removed too, and the uninstaller warns
 
 ## License
 
-[MIT](LICENSE) © 2026 Francisco Panis Kaseker
+[MIT](LICENSE)
 
 ## Legal notice
 
