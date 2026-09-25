@@ -270,7 +270,7 @@ if ! "$NGINX" -V 2>&1 | grep -q -- '--with-http_realip_module'; then
     esac
 fi
 if [ "${CFG[REALIP_MODE]}" = managed ]; then
-    ext=$(external_realip_files)
+    ext=$(external_realip_files) || die "nginx -T fails: fix the nginx configuration first (nothing was changed)"
     if [ -n "$ext" ]; then
         die "real_ip_header is already configured in: $(echo "$ext" | paste -sd' ' -). Remove it there to let this tool manage it, or use --realip auto."
     fi

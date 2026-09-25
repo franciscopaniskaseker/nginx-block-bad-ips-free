@@ -81,14 +81,13 @@ An hourly `sync` adds the include to domains created after the install.
 | OS | Mode | Status |
 |---|---|---|
 | Ubuntu 26.04 | HestiaCP 1.10 (nginx + PHP-FPM) | Field-tested |
-| Ubuntu 24.04 | HestiaCP 1.9 (nginx + Apache) | Field-tested |
+| Ubuntu 22.04, 24.04 | HestiaCP 1.9 / 1.10 (nginx + Apache, with webmail) | Field-tested |
 | Ubuntu 22.04, 26.04 | Plesk Obsidian 18.0 | Field-tested |
 | Rocky Linux 8 | Plesk Obsidian 18.0 | Field-tested |
 | AlmaLinux 9, 10 | Plesk Obsidian 18.0 | Field-tested |
 | Ubuntu 22.04, 24.04, 26.04 | plain nginx (distro package 1.18 / 1.24 / 1.28, `sites-enabled` symlinks, `--auto-inject`; mawk and gawk) | Field-tested |
 | Rocky Linux 8, 9, 10 | plain nginx (distro package 1.14 / 1.20 / 1.26, `--auto-inject`, SELinux enforcing) | Field-tested |
 | AlmaLinux 9 | plain nginx (distro package 1.20, `--auto-inject`, SELinux enforcing) | Field-tested |
-| Ubuntu 22.04 | HestiaCP | Supported, not yet field-tested |
 | Ubuntu 24.04 | Plesk | Supported, not yet field-tested |
 | AlmaLinux 8 | Plesk or plain nginx | Supported, not yet field-tested |
 | AlmaLinux 10 | plain nginx | Supported, not yet field-tested |

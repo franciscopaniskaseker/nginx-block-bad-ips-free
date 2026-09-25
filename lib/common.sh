@@ -242,9 +242,12 @@ nginx_running() {
     pgrep -x nginx >/dev/null 2>&1
 }
 
-# Reloads nginx. It never starts or restarts it.
+# Reloads nginx. It never starts or restarts it. NGINX_RELOADED tells the
+# caller whether a reload happened (0 when nginx is not running).
+NGINX_RELOADED=0
 nginx_reload() {
     local bin
+    NGINX_RELOADED=0
     if command -v systemctl >/dev/null 2>&1 && systemctl is-active --quiet nginx 2>/dev/null; then
         systemctl reload nginx || return 1
     elif pgrep -x nginx >/dev/null 2>&1; then
@@ -254,6 +257,7 @@ nginx_reload() {
         warn "nginx is not running: the new configuration is in place but was not loaded (nginx is never started by this tool)"
         return 0
     fi
+    NGINX_RELOADED=1
     return 0
 }
 
@@ -374,9 +378,9 @@ txn_finish() {
         return 0
     fi
     if [ "$TXN_PREFLIGHT" = failed ]; then
-        err "nginx -t still fails after $what, but it was already failing before; changes kept (snapshot in $TXN_DIR). nginx said:"
+        err "nginx -t still fails after $what, but it was already failing before (not caused by nginx-block-bad-ips); the changes were kept and nginx was not reloaded. nginx said:"
         printf '%s\n' "$NGINX_TEST_OUTPUT" | sed 's/^/    /' | while IFS= read -r l; do err "$l"; done
-        TXN_DIR=""
+        txn_discard
         return 1
     fi
     err "nginx -t failed after $what; restoring the previous configuration. nginx said:"

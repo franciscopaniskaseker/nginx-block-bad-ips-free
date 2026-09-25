@@ -142,7 +142,11 @@ do_apply() {
         return 0
     fi
     if txn_finish "$([ "$download" = yes ] && echo update || echo apply)"; then
-        info "applied: $entries blocklist entries, nginx reloaded"
+        if [ "$NGINX_RELOADED" = 1 ]; then
+            info "applied: $entries blocklist entries, nginx reloaded"
+        else
+            info "applied: $entries blocklist entries (nginx is not running, so nothing was reloaded)"
+        fi
         last_run OK "$entries entries"
         return 0
     fi

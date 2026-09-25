@@ -27,16 +27,19 @@ realip_effective() {
 }
 
 # Prints "file" for every nginx config file (other than ours) that sets
-# real_ip_header, according to nginx -T.
+# real_ip_header, according to nginx -T. Returns 2 when nginx -T fails: a
+# broken configuration prints nothing, which must not be read as "none".
 external_realip_files() {
-    local bin
-    bin=$(nginx_bin) || return 0
-    "$bin" -T 2>/dev/null | awk -v ours="$NBBI_NGINX_DIR/" '
+    local bin files
+    bin=$(nginx_bin) || return 2
+    files=$("$bin" -T 2>/dev/null | awk -v ours="$NBBI_NGINX_DIR/" '
         /^# configuration file / { file = $4; sub(/:$/, "", file); next }
         index(file, ours) == 1 { next }
         { line = $0; sub(/#.*/, "", line) }
         line ~ /(^|[ \t;])real_ip_header[ \t]/ { print file }
-    ' | sort -u
+    ' | sort -u; exit "${PIPESTATUS[0]}") || return 2
+    [ -n "$files" ] && printf '%s\n' "$files"
+    return 0
 }
 
 # Decides and stores the effective realip mode (called by `update`).
@@ -47,7 +50,10 @@ resolve_realip() {
         off)     echo off > "$NBBI_STATE/realip.effective" ;;
         managed) echo managed > "$NBBI_STATE/realip.effective" ;;
         auto)
-            files=$(external_realip_files)
+            if ! files=$(external_realip_files); then
+                warn "cannot read the nginx configuration (nginx -T failed); keeping the previous real IP mode ($(cat "$NBBI_STATE/realip.effective" 2>/dev/null || echo "not decided yet"))"
+                return 0
+            fi
             if [ -n "$files" ]; then
                 echo external > "$NBBI_STATE/realip.effective"
                 printf '%s\n' "$files" > "$NBBI_STATE/realip.external"

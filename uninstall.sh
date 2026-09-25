@@ -108,13 +108,17 @@ for f in "$NBBI_NGINX_DIR"/.stage.*; do
 done
 
 if [ "$TXN_COUNT" -gt 0 ]; then
-    if ! txn_finish uninstall; then
-        if [ "$TXN_PREFLIGHT" = ok ]; then
-            die "uninstall aborted: nginx -t failed without the product, so everything was restored. Nothing else was removed. Backup: $BACKUP"
+    if txn_finish uninstall; then
+        if [ "$NGINX_RELOADED" = 1 ]; then
+            info "removed the block from ${#REMOVED_FILES[@]} vhost file(s) and reloaded nginx"
+        else
+            info "removed the block from ${#REMOVED_FILES[@]} vhost file(s) (nginx is not running, so nothing was reloaded)"
         fi
-        warn "nginx -t was already failing before the uninstall; continuing the removal"
+    elif [ "$TXN_PREFLIGHT" = ok ]; then
+        die "uninstall aborted: nginx -t failed without the product, so everything was restored. Nothing else was removed. Backup: $BACKUP"
+    else
+        warn "removed the block from ${#REMOVED_FILES[@]} vhost file(s), but nginx was NOT reloaded: its configuration has an error that does not come from nginx-block-bad-ips (see above). Fix it, then run: nginx -t && systemctl reload nginx"
     fi
-    info "removed the block from ${#REMOVED_FILES[@]} vhost file(s) and reloaded nginx"
 else
     txn_discard
     info "no nginx files of nginx-block-bad-ips were found"
