@@ -374,6 +374,7 @@ ensure_cron_running
 cat > "$NBBI_LOGROTATE" <<EOF
 $NBBI_LOG {
     su root root
+    create 0640 root root
     weekly
     rotate 8
     compress
